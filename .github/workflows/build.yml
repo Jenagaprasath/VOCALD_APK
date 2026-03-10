@@ -86,10 +86,7 @@ jobs:
           chmod +x $SDK_ROOT/tools/bin/*
 
           # Create wrapper scripts that point to new location
-          cat > $SDK_ROOT/tools/bin/sdkmanager << 'WRAPPER'
-#!/bin/bash
-exec ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager "$@"
-WRAPPER
+          printf '#!/bin/bash\nexec ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager "$@"\n' > $SDK_ROOT/tools/bin/sdkmanager
           chmod +x $SDK_ROOT/tools/bin/sdkmanager
 
           # Set PATH
