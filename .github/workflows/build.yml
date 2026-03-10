@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      # 3. Cache
+      # 3. Cache Buildozer (speeds up repeat builds massively)
       - name: Cache Buildozer global directory
         uses: actions/cache@v4
         with:
@@ -62,20 +62,53 @@ jobs:
           pip install cython==0.29.37
           pip install virtualenv
 
-      # 7. Strip BOM from buildozer.spec (Windows VS Code saves with BOM)
+      # 7. Pre-install Android SDK + accept ALL licenses
+      #    This prevents interactive license prompts killing the build
+      - name: Set up Android SDK and accept licenses
+        run: |
+          # Install Android SDK command-line tools
+          mkdir -p ~/.buildozer/android/platform
+          cd ~/.buildozer/android/platform
+
+          # Download SDK cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline-tools.zip
+          unzip -q cmdline-tools.zip
+          mkdir -p android-sdk/cmdline-tools/latest
+          mv cmdline-tools/* android-sdk/cmdline-tools/latest/ 2>/dev/null || true
+          rm -f cmdline-tools.zip
+
+          export ANDROID_SDK_ROOT=~/.buildozer/android/platform/android-sdk
+          export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH
+
+          # Accept ALL licenses non-interactively
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+
+          # Install required build tools (use stable version, not rc2)
+          sdkmanager "build-tools;34.0.0" "platforms;android-33" "platform-tools" > /dev/null 2>&1
+
+          # Accept licenses again after install
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "Android SDK setup complete"
+          ls $ANDROID_SDK_ROOT/build-tools/
+
+      # 8. Fix buildozer.spec encoding (strip BOM from Windows VS Code saves)
       - name: Fix buildozer.spec encoding
         run: |
           sed -i 's/^\xef\xbb\xbf//' app/buildozer.spec
-          echo "First line check:"
+          echo "First line of buildozer.spec:"
           head -1 app/buildozer.spec
 
-      # 8. Build APK
+      # 9. Build APK
       - name: Build Debug APK
         working-directory: app
+        env:
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
         run: |
           buildozer -v android debug 2>&1 | tee build.log || true
 
-      # 9. Locate APK
+      # 10. Locate APK
       - name: Locate APK
         working-directory: app
         run: |
@@ -89,10 +122,10 @@ jobs:
           APK_PATH="${APK_PATH#./}"
           echo "APK_PATH=app/$APK_PATH" >> $GITHUB_ENV
           echo "APK_NAME=$(basename $APK_PATH)" >> $GITHUB_ENV
-          echo "Found: app/$APK_PATH"
+          echo "SUCCESS: Found APK at app/$APK_PATH"
           ls -lh "$APK_PATH"
 
-      # 10. Upload artifact
+      # 11. Upload artifact (always available in Actions tab)
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -100,7 +133,7 @@ jobs:
           path: ${{ env.APK_PATH }}
           retention-days: 30
 
-      # 11. Release
+      # 12. Create GitHub Release
       - name: Generate release info
         run: |
           echo "SHA7=${GITHUB_SHA::7}" >> $GITHUB_ENV
@@ -113,13 +146,14 @@ jobs:
           name: "Vocald Build ${{ env.RELEASE_TAG }}"
           body: |
             ## Vocald Debug Build
+
             **Commit:** `${{ github.sha }}`
             **Branch:** `${{ github.ref_name }}`
             **By:** ${{ github.actor }}
 
             ### Install
-            1. Download the `.apk` below
-            2. Enable Install from unknown sources on your Android device
+            1. Download the `.apk` file below
+            2. Enable **Install from unknown sources** on your Android device
             3. Install and test
 
             ### Changes
@@ -132,7 +166,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 12. Always upload build log
+      # 13. Always upload build log for debugging
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4

@@ -10,15 +10,18 @@ source.exclude_dirs = tests,bin,.git,.github,__pycache__,docs,scripts
 
 version = 1.0.0
 
-requirements = python3,kivy==2.3.0,pillow,pydub,numpy
+requirements = python3,kivy==2.3.0,pillow,numpy
 
-android.permissions = READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,READ_CALL_LOG,FOREGROUND_SERVICE,RECEIVE_BOOT_COMPLETED,WAKE_LOCK
+android.permissions = READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,FOREGROUND_SERVICE,RECEIVE_BOOT_COMPLETED,WAKE_LOCK
 
 android.api = 33
 android.minapi = 29
 android.ndk = 25b
-android.sdk = 33
 android.ndk_api = 21
+android.sdk = 33
+
+# Pin to stable build tools - avoids grabbing rc/preview versions
+android.build_tools_version = 34.0.0
 
 android.archs = arm64-v8a
 
