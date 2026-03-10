@@ -38,7 +38,7 @@ jobs:
           key: pip-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
           restore-keys: pip-${{ runner.os }}-
 
-      # 4. System deps (no GStreamer - broken on ubuntu-22.04)
+      # 4. System deps
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
@@ -50,9 +50,11 @@ jobs:
             libjpeg-dev libpng-dev libtiff-dev \
             build-essential ccache
 
-      # 5. Java
+      # 5. Java - use Java 17 explicitly
       - name: Set JAVA_HOME
-        run: echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> $GITHUB_ENV
+        run: |
+          echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> $GITHUB_ENV
+          echo "/usr/lib/jvm/java-17-openjdk-amd64/bin" >> $GITHUB_PATH
 
       # 6. Python build tools
       - name: Install Buildozer and Cython
@@ -62,49 +64,72 @@ jobs:
           pip install cython==0.29.37
           pip install virtualenv
 
-      # 7. Pre-install Android SDK + accept ALL licenses
-      #    This prevents interactive license prompts killing the build
-      - name: Set up Android SDK and accept licenses
+      # 7. Set up Android SDK in the EXACT path Buildozer expects
+      #    Buildozer looks for: ~/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
+      - name: Set up Android SDK with correct layout
         run: |
-          # Install Android SDK command-line tools
-          mkdir -p ~/.buildozer/android/platform
-          cd ~/.buildozer/android/platform
+          SDK_ROOT=~/.buildozer/android/platform/android-sdk
+          mkdir -p $SDK_ROOT
 
-          # Download SDK cmdline-tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline-tools.zip
-          unzip -q cmdline-tools.zip
-          mkdir -p android-sdk/cmdline-tools/latest
-          mv cmdline-tools/* android-sdk/cmdline-tools/latest/ 2>/dev/null || true
-          rm -f cmdline-tools.zip
+          # Download cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O /tmp/cmdline-tools.zip
+          unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools-extracted
 
-          export ANDROID_SDK_ROOT=~/.buildozer/android/platform/android-sdk
-          export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH
+          # Install at cmdline-tools/latest (new layout)
+          mkdir -p $SDK_ROOT/cmdline-tools/latest
+          mv /tmp/cmdline-tools-extracted/cmdline-tools/* $SDK_ROOT/cmdline-tools/latest/
+
+          # ALSO install at tools/bin (old layout — what Buildozer 1.5 looks for)
+          mkdir -p $SDK_ROOT/tools/bin
+          cp $SDK_ROOT/cmdline-tools/latest/bin/sdkmanager $SDK_ROOT/tools/bin/sdkmanager
+          cp $SDK_ROOT/cmdline-tools/latest/bin/avdmanager $SDK_ROOT/tools/bin/avdmanager 2>/dev/null || true
+          chmod +x $SDK_ROOT/tools/bin/*
+
+          # Create wrapper scripts that point to new location
+          cat > $SDK_ROOT/tools/bin/sdkmanager << 'WRAPPER'
+#!/bin/bash
+exec ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager "$@"
+WRAPPER
+          chmod +x $SDK_ROOT/tools/bin/sdkmanager
+
+          # Set PATH
+          export PATH=$SDK_ROOT/cmdline-tools/latest/bin:$SDK_ROOT/tools/bin:$PATH
+          export ANDROID_SDK_ROOT=$SDK_ROOT
 
           # Accept ALL licenses non-interactively
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          yes | sdkmanager --sdk_root=$SDK_ROOT --licenses > /dev/null 2>&1 || true
 
-          # Install required build tools (use stable version, not rc2)
-          sdkmanager "build-tools;34.0.0" "platforms;android-33" "platform-tools" > /dev/null 2>&1
+          # Install stable build tools + platform
+          sdkmanager --sdk_root=$SDK_ROOT \
+            "build-tools;34.0.0" \
+            "platforms;android-33" \
+            "platform-tools" > /dev/null 2>&1
 
-          # Accept licenses again after install
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          # Accept licenses again
+          yes | sdkmanager --sdk_root=$SDK_ROOT --licenses > /dev/null 2>&1 || true
 
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-          echo "Android SDK setup complete"
-          ls $ANDROID_SDK_ROOT/build-tools/
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
+          echo "$SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$SDK_ROOT/tools/bin" >> $GITHUB_PATH
+          echo "$SDK_ROOT/platform-tools" >> $GITHUB_PATH
 
-      # 8. Fix buildozer.spec encoding (strip BOM from Windows VS Code saves)
+          echo "=== SDK layout ==="
+          ls $SDK_ROOT/
+          echo "=== build-tools ==="
+          ls $SDK_ROOT/build-tools/
+          echo "=== tools/bin ==="
+          ls $SDK_ROOT/tools/bin/
+
+      # 8. Fix buildozer.spec encoding (strip Windows BOM)
       - name: Fix buildozer.spec encoding
         run: |
           sed -i 's/^\xef\xbb\xbf//' app/buildozer.spec
-          echo "First line of buildozer.spec:"
+          echo "First line:"
           head -1 app/buildozer.spec
 
       # 9. Build APK
       - name: Build Debug APK
         working-directory: app
-        env:
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
         run: |
           buildozer -v android debug 2>&1 | tee build.log || true
 
@@ -125,7 +150,7 @@ jobs:
           echo "SUCCESS: Found APK at app/$APK_PATH"
           ls -lh "$APK_PATH"
 
-      # 11. Upload artifact (always available in Actions tab)
+      # 11. Upload artifact
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -166,7 +191,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 13. Always upload build log for debugging
+      # 13. Always upload build log
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
