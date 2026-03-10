@@ -50,7 +50,6 @@ jobs:
             zlib1g-dev libncurses5-dev libncursesw5-dev \
             libffi-dev libssl-dev libsqlite3-dev \
             libjpeg-dev libpng-dev libtiff-dev \
-            libgstreamer1.0-dev gstreamer1.0-plugins-base \
             build-essential ccache
 
       # ── 5. Install Python build tools ─────────────────────────────────────────
