@@ -14,13 +14,15 @@ requirements = python3,kivy==2.3.0,pillow,numpy
 
 android.permissions = READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,FOREGROUND_SERVICE,RECEIVE_BOOT_COMPLETED,WAKE_LOCK
 
+# API 33 = target (what features we use)
 android.api = 33
-android.minapi = 29
-android.ndk = 25b
-android.ndk_api = 21
-android.sdk = 33
 
-# Pin to stable build tools - avoids grabbing rc/preview versions
+
+# minapi MUST match ndk_api to avoid mismatch error
+android.minapi = 21
+android.ndk_api = 21
+
+android.ndk = 25b
 android.build_tools_version = 34.0.0
 
 android.archs = arm64-v8a
