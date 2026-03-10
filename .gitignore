@@ -1,0 +1,57 @@
+﻿# Git Ignore Rules
+# Vocald .gitignore
+
+# Buildozer
+.buildozer/
+bin/
+build.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+*.egg
+.eggs/
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Database (local only)
+*.db
+*.sqlite
+*.sqlite3
+
+# Models (large files - use Git LFS or download script)
+models/ecapa_tdnn/*.onnx
+
+# Logs
+*.log
+logs/
+
+# Android keys (NEVER commit)
+*.keystore
+*.jks
+release.properties
+
+# Test outputs
+.pytest_cache/
+.coverage
+htmlcov/

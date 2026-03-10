@@ -1,0 +1,146 @@
+﻿name: Build Vocald APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:        # Allow manual trigger from GitHub UI
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    steps:
+
+      # ── 1. Checkout code ──────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Set up Python ──────────────────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # ── 3. Cache Buildozer & Android SDK ─────────────────────────────────────
+      - name: Cache Buildozer global directory
+        uses: actions/cache@v4
+        with:
+          path: ~/.buildozer
+          key: buildozer-${{ runner.os }}-${{ hashFiles('app/buildozer.spec') }}
+          restore-keys: |
+            buildozer-${{ runner.os }}-
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+
+      # ── 4. Install system dependencies ────────────────────────────────────────
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            git zip unzip openjdk-17-jdk \
+            python3-pip autoconf libtool pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev \
+            libffi-dev libssl-dev libsqlite3-dev \
+            libjpeg-dev libpng-dev libtiff-dev \
+            libgstreamer1.0-dev gstreamer1.0-plugins-base \
+            build-essential ccache
+
+      # ── 5. Install Python build tools ─────────────────────────────────────────
+      - name: Install Buildozer and dependencies
+        run: |
+          pip install --upgrade pip
+          pip install buildozer==1.5.0
+          pip install cython==0.29.37
+          pip install virtualenv
+
+      # ── 6. Set up Android SDK / NDK ───────────────────────────────────────────
+      - name: Set JAVA_HOME
+        run: echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> $GITHUB_ENV
+
+      # ── 7. Build APK ──────────────────────────────────────────────────────────
+      - name: Build Debug APK
+        working-directory: app
+        env:
+          ANDROID_SDK_ROOT: ${{ github.workspace }}/.buildozer/android/platform/android-sdk
+        run: |
+          buildozer -v android debug 2>&1 | tee build.log
+          echo "BUILD_STATUS=$?" >> $GITHUB_ENV
+
+      # ── 8. Find APK path ──────────────────────────────────────────────────────
+      - name: Locate APK
+        id: find_apk
+        working-directory: app
+        run: |
+          APK_PATH=$(find bin/ -name "*.apk" | head -1)
+          if [ -z "$APK_PATH" ]; then
+            echo "ERROR: No APK found in bin/"
+            cat build.log | tail -50
+            exit 1
+          fi
+          echo "APK_PATH=app/$APK_PATH" >> $GITHUB_ENV
+          echo "APK_NAME=$(basename $APK_PATH)" >> $GITHUB_ENV
+          echo "Found APK: $APK_PATH"
+          ls -lh app/$APK_PATH
+
+      # ── 9. Upload APK as artifact (always available) ──────────────────────────
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vocald-debug-apk
+          path: ${{ env.APK_PATH }}
+          retention-days: 30
+
+      # ── 10. Create GitHub Release ─────────────────────────────────────────────
+      - name: Get short SHA
+        id: slug
+        run: echo "SHA7=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Generate release tag
+        run: |
+          echo "RELEASE_TAG=build-$(date +'%Y%m%d-%H%M')-${{ env.SHA7 }}" >> $GITHUB_ENV
+          echo "RELEASE_NAME=Vocald Debug Build — $(date +'%Y-%m-%d %H:%M') (${{ env.SHA7 }})" >> $GITHUB_ENV
+
+      - name: Create Release and Upload APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_NAME }}
+          body: |
+            ## 🔨 Automatic Debug Build
+
+            **Commit:** `${{ github.sha }}`
+            **Branch:** `${{ github.ref_name }}`
+            **Triggered by:** ${{ github.actor }}
+
+            ### 📥 How to install
+            1. Download `${{ env.APK_NAME }}` below
+            2. Enable "Install from unknown sources" on your Android device
+            3. Install and test
+
+            ### 📋 Changes
+            ${{ github.event.head_commit.message }}
+
+            ---
+            > ⚠️ This is a debug build for testing only.
+          files: ${{ env.APK_PATH }}
+          draft: false
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 11. Upload build log on failure ───────────────────────────────────────
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: app/build.log
+          retention-days: 7

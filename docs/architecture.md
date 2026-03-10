@@ -1,0 +1,1 @@
+﻿# Vocald Architecture
