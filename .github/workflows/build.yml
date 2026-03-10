@@ -3,44 +3,42 @@
 on:
   push:
     branches: [ main, master ]
-  workflow_dispatch:        # Allow manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
   build:
     name: Build Android APK
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
 
-      # ── 1. Checkout code ──────────────────────────────────────────────────────
+      # 1. Checkout
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── 2. Set up Python ──────────────────────────────────────────────────────
+      # 2. Python
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      # ── 3. Cache Buildozer & Android SDK ─────────────────────────────────────
+      # 3. Cache
       - name: Cache Buildozer global directory
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
           key: buildozer-${{ runner.os }}-${{ hashFiles('app/buildozer.spec') }}
-          restore-keys: |
-            buildozer-${{ runner.os }}-
+          restore-keys: buildozer-${{ runner.os }}-
 
-      - name: Cache pip packages
+      - name: Cache pip
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            pip-${{ runner.os }}-
+          restore-keys: pip-${{ runner.os }}-
 
-      # ── 4. Install system dependencies ────────────────────────────────────────
+      # 4. System deps (no GStreamer - broken on ubuntu-22.04)
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
@@ -52,44 +50,49 @@ jobs:
             libjpeg-dev libpng-dev libtiff-dev \
             build-essential ccache
 
-      # ── 5. Install Python build tools ─────────────────────────────────────────
-      - name: Install Buildozer and dependencies
+      # 5. Java
+      - name: Set JAVA_HOME
+        run: echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> $GITHUB_ENV
+
+      # 6. Python build tools
+      - name: Install Buildozer and Cython
         run: |
           pip install --upgrade pip
           pip install buildozer==1.5.0
           pip install cython==0.29.37
           pip install virtualenv
 
-      # ── 6. Set up Android SDK / NDK ───────────────────────────────────────────
-      - name: Set JAVA_HOME
-        run: echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> $GITHUB_ENV
+      # 7. Strip BOM from buildozer.spec (Windows VS Code saves with BOM)
+      - name: Fix buildozer.spec encoding
+        run: |
+          sed -i 's/^\xef\xbb\xbf//' app/buildozer.spec
+          echo "First line check:"
+          head -1 app/buildozer.spec
 
-      # ── 7. Build APK ──────────────────────────────────────────────────────────
+      # 8. Build APK
       - name: Build Debug APK
         working-directory: app
-        env:
-          ANDROID_SDK_ROOT: ${{ github.workspace }}/.buildozer/android/platform/android-sdk
         run: |
-          buildozer -v android debug 2>&1 | tee build.log
-          echo "BUILD_STATUS=$?" >> $GITHUB_ENV
+          buildozer -v android debug 2>&1 | tee build.log || true
 
-      # ── 8. Find APK path ──────────────────────────────────────────────────────
+      # 9. Locate APK
       - name: Locate APK
-        id: find_apk
         working-directory: app
         run: |
-          APK_PATH=$(find bin/ -name "*.apk" | head -1)
+          echo "=== Searching for APK ==="
+          APK_PATH=$(find . -name "*.apk" 2>/dev/null | head -1)
           if [ -z "$APK_PATH" ]; then
-            echo "ERROR: No APK found in bin/"
-            cat build.log | tail -50
+            echo "ERROR: No APK found. Last 100 lines of build log:"
+            tail -100 build.log || echo "No build log"
             exit 1
           fi
+          APK_PATH="${APK_PATH#./}"
           echo "APK_PATH=app/$APK_PATH" >> $GITHUB_ENV
           echo "APK_NAME=$(basename $APK_PATH)" >> $GITHUB_ENV
-          echo "Found APK: $APK_PATH"
-          ls -lh app/$APK_PATH
+          echo "Found: app/$APK_PATH"
+          ls -lh "$APK_PATH"
 
-      # ── 9. Upload APK as artifact (always available) ──────────────────────────
+      # 10. Upload artifact
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -97,47 +100,41 @@ jobs:
           path: ${{ env.APK_PATH }}
           retention-days: 30
 
-      # ── 10. Create GitHub Release ─────────────────────────────────────────────
-      - name: Get short SHA
-        id: slug
-        run: echo "SHA7=${GITHUB_SHA::7}" >> $GITHUB_ENV
-
-      - name: Generate release tag
+      # 11. Release
+      - name: Generate release info
         run: |
-          echo "RELEASE_TAG=build-$(date +'%Y%m%d-%H%M')-${{ env.SHA7 }}" >> $GITHUB_ENV
-          echo "RELEASE_NAME=Vocald Debug Build — $(date +'%Y-%m-%d %H:%M') (${{ env.SHA7 }})" >> $GITHUB_ENV
+          echo "SHA7=${GITHUB_SHA::7}" >> $GITHUB_ENV
+          echo "RELEASE_TAG=build-$(date +'%Y%m%d-%H%M')-${GITHUB_SHA::7}" >> $GITHUB_ENV
 
-      - name: Create Release and Upload APK
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: ${{ env.RELEASE_NAME }}
+          name: "Vocald Build ${{ env.RELEASE_TAG }}"
           body: |
-            ## 🔨 Automatic Debug Build
-
+            ## Vocald Debug Build
             **Commit:** `${{ github.sha }}`
             **Branch:** `${{ github.ref_name }}`
-            **Triggered by:** ${{ github.actor }}
+            **By:** ${{ github.actor }}
 
-            ### 📥 How to install
-            1. Download `${{ env.APK_NAME }}` below
-            2. Enable "Install from unknown sources" on your Android device
+            ### Install
+            1. Download the `.apk` below
+            2. Enable Install from unknown sources on your Android device
             3. Install and test
 
-            ### 📋 Changes
+            ### Changes
             ${{ github.event.head_commit.message }}
 
-            ---
-            > ⚠️ This is a debug build for testing only.
+            > Debug build for testing only
           files: ${{ env.APK_PATH }}
           draft: false
           prerelease: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── 11. Upload build log on failure ───────────────────────────────────────
-      - name: Upload build log on failure
-        if: failure()
+      # 12. Always upload build log
+      - name: Upload build log
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-log
