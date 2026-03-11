@@ -126,7 +126,15 @@ jobs:
           echo "First line:"
           head -1 app/buildozer.spec
 
-      # 9. Build APK
+      # 9. Purge stale .pyc / __pycache__ from source tree
+      #    Buildozer bakes these into the APK; stale ones cause ImportError on device
+      - name: Purge stale bytecode
+        run: |
+          find app -name "*.pyc" -delete
+          find app -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+          echo "Bytecode purge complete"
+
+      # 10. Build APK
       - name: Build Debug APK
         working-directory: app
         run: |
