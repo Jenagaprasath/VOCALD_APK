@@ -22,6 +22,27 @@ try:
 except Exception as _e:
     pass  # Non-fatal; Kivy will try again itself
 
+# ── Purge stale .pyc files so updated code always loads cleanly ───────────
+# MIUI sometimes preserves /data/data/.../files/app/ across reinstalls,
+# leaving old .pyc files that shadow the newly-extracted source.
+try:
+    import importlib, glob
+    _home = os.path.expanduser('~')
+    for _pyc in glob.glob(os.path.join(_home, '**', '*.pyc'), recursive=True):
+        try:
+            os.remove(_pyc)
+        except Exception:
+            pass
+    for _cache in glob.glob(os.path.join(_home, '**', '__pycache__'), recursive=True):
+        try:
+            import shutil as _shutil
+            _shutil.rmtree(_cache, ignore_errors=True)
+        except Exception:
+            pass
+    importlib.invalidate_caches()
+except Exception:
+    pass
+
 # ── Monkey-patch shutil.copytree so icon-copy errors are non-fatal ──────────
 import shutil as _shutil
 _orig_copytree = _shutil.copytree

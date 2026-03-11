@@ -8,7 +8,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json,ttf
 source.exclude_dirs = tests,bin,.git,.github,__pycache__,docs,scripts
 
-version = 1.0.0
+version = 1.0.1
 
 requirements = python3,kivy==2.3.0,pillow,numpy
 
@@ -16,7 +16,6 @@ android.permissions = READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,FOREGROUND_SE
 
 # API 33 = target (what features we use)
 android.api = 33
-
 
 # minapi MUST match ndk_api to avoid mismatch error
 android.minapi = 21
