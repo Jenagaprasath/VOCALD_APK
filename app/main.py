@@ -137,7 +137,8 @@ class VocaldApp(App):
         Clock.schedule_once(self._finish_splash, 2.5)
 
     def _finish_splash(self, dt):
-        self.sm.go_to('dashboard')
+        if hasattr(self, 'sm'):
+            self.sm.go_to('dashboard')
 
     def on_pause(self):
         return True

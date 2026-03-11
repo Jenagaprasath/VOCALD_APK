@@ -3,7 +3,7 @@ Vocald - Splash Screen
 Module 1: Animated loading screen shown on app launch
 """
 
-from kivy.uix.screen import Screen
+from kivy.uix.screenmanager import Screen
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
