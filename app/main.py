@@ -1,15 +1,13 @@
-﻿# Vocald - Entry Point
-"""
-Vocald - Automatic Speaker Identification App
-Module 1: App Shell + Screen Manager + Navigation
+﻿"""
+Vocald - Entry Point
+Module 1: App Shell + Screen Manager
 """
 
 import os
 import sys
 
-# Android-specific setup
 try:
-    from android.permissions import request_permissions, Permission  # noqa
+    from android.permissions import request_permissions, Permission
     ANDROID = True
 except ImportError:
     ANDROID = False
@@ -19,27 +17,31 @@ from kivy.uix.screenmanager import ScreenManager, FadeTransition
 from kivy.core.window import Window
 from kivy.utils import platform
 from kivy.logger import Logger
+from kivy.clock import Clock
 
-# Import screens
-from ui.screens.splash_screen import SplashScreen
-from ui.screens.dashboard_screen import DashboardScreen
-from ui.screens.speakers_screen import SpeakersScreen
-from ui.screens.recordings_screen import RecordingsScreen
-from ui.screens.queue_screen import QueueScreen
-from ui.screens.folder_screen import FolderScreen
-from ui.screens.settings_screen import SettingsScreen
-from ui.screens.speaker_detail_screen import SpeakerDetailScreen
-
-# Import theme
-from ui.app_theme import VocaldTheme
-
-# Import utils
-from utils.logger import setup_logger
-from utils.constants import APP_NAME, APP_VERSION
+# --- Safe imports with clear error logging ---
+def _import_screens():
+    try:
+        from ui.screens.splash_screen       import SplashScreen
+        from ui.screens.dashboard_screen    import DashboardScreen
+        from ui.screens.speakers_screen     import SpeakersScreen
+        from ui.screens.recordings_screen   import RecordingsScreen
+        from ui.screens.queue_screen        import QueueScreen
+        from ui.screens.folder_screen       import FolderScreen
+        from ui.screens.settings_screen     import SettingsScreen
+        from ui.screens.speaker_detail_screen import SpeakerDetailScreen
+        Logger.info("Vocald: All screens imported OK")
+        return (SplashScreen, DashboardScreen, SpeakersScreen,
+                RecordingsScreen, QueueScreen, FolderScreen,
+                SettingsScreen, SpeakerDetailScreen)
+    except Exception as e:
+        Logger.error(f"Vocald: Screen import FAILED: {e}")
+        import traceback
+        Logger.error(traceback.format_exc())
+        raise
 
 
 class VocaldScreenManager(ScreenManager):
-    """Main screen manager for Vocald app."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -47,7 +49,10 @@ class VocaldScreenManager(ScreenManager):
         self._build_screens()
 
     def _build_screens(self):
-        """Register all screens."""
+        (SplashScreen, DashboardScreen, SpeakersScreen,
+         RecordingsScreen, QueueScreen, FolderScreen,
+         SettingsScreen, SpeakerDetailScreen) = _import_screens()
+
         screens = [
             SplashScreen(name='splash'),
             DashboardScreen(name='dashboard'),
@@ -60,11 +65,9 @@ class VocaldScreenManager(ScreenManager):
         ]
         for screen in screens:
             self.add_widget(screen)
-
         Logger.info(f"Vocald: {len(screens)} screens registered")
 
     def go_to(self, screen_name, direction='left'):
-        """Navigate to a screen by name."""
         if self.has_screen(screen_name):
             self.transition.direction = direction
             self.current = screen_name
@@ -73,77 +76,63 @@ class VocaldScreenManager(ScreenManager):
 
 
 class VocaldApp(App):
-    """Main Vocald Application."""
 
-    title = APP_NAME
-    theme = None
+    title = 'Vocald'
 
     def build(self):
-        """Build and return the root widget."""
-        # Setup logging
-        setup_logger()
-        Logger.info(f"Vocald: Starting {APP_NAME} v{APP_VERSION}")
+        Logger.info("Vocald: Build starting...")
 
-        # Apply theme
-        self.theme = VocaldTheme()
-        self.theme.apply()
-
-        # Set window background (desktop testing)
         if platform != 'android':
             Window.size = (400, 750)
-            Window.clearcolor = self.theme.bg_primary
+            Window.clearcolor = (0.04, 0.055, 0.1, 1)
 
-        # Request Android permissions
         if ANDROID:
             self._request_permissions()
 
-        # Build screen manager
-        self.sm = VocaldScreenManager()
-        return self.sm
+        try:
+            self.sm = VocaldScreenManager()
+            Logger.info("Vocald: ScreenManager built OK")
+            return self.sm
+        except Exception as e:
+            Logger.error(f"Vocald: Build FAILED: {e}")
+            import traceback
+            Logger.error(traceback.format_exc())
+            # Return minimal fallback UI
+            from kivy.uix.label import Label
+            return Label(
+                text=f'Vocald startup error:\n{e}',
+                color=(1, 0.3, 0.3, 1),
+            )
 
     def _request_permissions(self):
-        """Request required Android permissions."""
         try:
             from android.permissions import request_permissions, Permission
-            permissions = [
+            request_permissions([
                 Permission.READ_EXTERNAL_STORAGE,
                 Permission.WRITE_EXTERNAL_STORAGE,
-                Permission.READ_CALL_LOG,
                 Permission.FOREGROUND_SERVICE,
                 Permission.RECEIVE_BOOT_COMPLETED,
-            ]
-            request_permissions(permissions)
+            ])
             Logger.info("Vocald: Android permissions requested")
         except Exception as e:
-            Logger.error(f"Vocald: Permission request failed: {e}")
+            Logger.error(f"Vocald: Permission error: {e}")
 
     def on_start(self):
-        """Called when app starts."""
-        Logger.info("Vocald: App started")
-        # Navigate to dashboard after splash
-        from kivy.clock import Clock
+        Logger.info("Vocald: App started — transitioning to dashboard")
         Clock.schedule_once(self._finish_splash, 2.5)
 
     def _finish_splash(self, dt):
-        """Transition from splash to dashboard."""
         self.sm.go_to('dashboard')
 
     def on_pause(self):
-        """Allow app to be paused on Android."""
-        Logger.info("Vocald: App paused")
         return True
 
     def on_resume(self):
-        """Called when app resumes from pause."""
-        Logger.info("Vocald: App resumed")
+        Logger.info("Vocald: Resumed")
 
     def on_stop(self):
-        """Called when app stops."""
-        Logger.info("Vocald: App stopped")
+        Logger.info("Vocald: Stopped")
 
 
 if __name__ == '__main__':
     VocaldApp().run()
-
-
-    
