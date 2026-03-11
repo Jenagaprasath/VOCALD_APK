@@ -76,6 +76,8 @@ jobs:
           unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools-extracted
 
           # Install at cmdline-tools/latest (new layout)
+          # Remove first in case cache restored an old version
+          rm -rf $SDK_ROOT/cmdline-tools/latest
           mkdir -p $SDK_ROOT/cmdline-tools/latest
           mv /tmp/cmdline-tools-extracted/cmdline-tools/* $SDK_ROOT/cmdline-tools/latest/
 
