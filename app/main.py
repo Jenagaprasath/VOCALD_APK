@@ -6,6 +6,34 @@ Module 1: App Shell + Screen Manager
 import os
 import sys
 
+# ── Pre-create .kivy dirs BEFORE Kivy initialises ──────────────────────────
+# Kivy 2.3.0 on Android tries shutil.copytree into .kivy/icon/ on first run.
+# If the dir already exists the copy is skipped; if it doesn't exist the
+# parent must exist so makedirs can create it. Either way we need both dirs.
+try:
+    _files_dir = os.environ.get('ANDROID_APP_PATH',
+                  os.path.join(os.path.expanduser('~'), '.kivy'))
+    # On Android, HOME == /data/user/0/<pkg>/files/app
+    _kivy_dir   = os.path.join(os.path.expanduser('~'), '.kivy')
+    _icon_dir   = os.path.join(_kivy_dir, 'icon')
+    _logs_dir   = os.path.join(_kivy_dir, 'logs')
+    for _d in (_kivy_dir, _icon_dir, _logs_dir):
+        os.makedirs(_d, exist_ok=True)
+except Exception as _e:
+    pass  # Non-fatal; Kivy will try again itself
+
+# ── Monkey-patch shutil.copytree so icon-copy errors are non-fatal ──────────
+import shutil as _shutil
+_orig_copytree = _shutil.copytree
+
+def _safe_copytree(src, dst, **kwargs):
+    try:
+        return _orig_copytree(src, dst, **kwargs)
+    except (_shutil.Error, OSError, PermissionError):
+        pass  # Already exists or permission denied — both are fine
+_shutil.copytree = _safe_copytree
+# ────────────────────────────────────────────────────────────────────────────
+
 try:
     from android.permissions import request_permissions, Permission
     ANDROID = True
@@ -19,16 +47,16 @@ from kivy.utils import platform
 from kivy.logger import Logger
 from kivy.clock import Clock
 
-# --- Safe imports with clear error logging ---
+
 def _import_screens():
     try:
-        from ui.screens.splash_screen       import SplashScreen
-        from ui.screens.dashboard_screen    import DashboardScreen
-        from ui.screens.speakers_screen     import SpeakersScreen
-        from ui.screens.recordings_screen   import RecordingsScreen
-        from ui.screens.queue_screen        import QueueScreen
-        from ui.screens.folder_screen       import FolderScreen
-        from ui.screens.settings_screen     import SettingsScreen
+        from ui.screens.splash_screen         import SplashScreen
+        from ui.screens.dashboard_screen      import DashboardScreen
+        from ui.screens.speakers_screen       import SpeakersScreen
+        from ui.screens.recordings_screen     import RecordingsScreen
+        from ui.screens.queue_screen          import QueueScreen
+        from ui.screens.folder_screen         import FolderScreen
+        from ui.screens.settings_screen       import SettingsScreen
         from ui.screens.speaker_detail_screen import SpeakerDetailScreen
         Logger.info("Vocald: All screens imported OK")
         return (SplashScreen, DashboardScreen, SpeakersScreen,
@@ -49,23 +77,12 @@ class VocaldScreenManager(ScreenManager):
         self._build_screens()
 
     def _build_screens(self):
-        (SplashScreen, DashboardScreen, SpeakersScreen,
-         RecordingsScreen, QueueScreen, FolderScreen,
-         SettingsScreen, SpeakerDetailScreen) = _import_screens()
-
-        screens = [
-            SplashScreen(name='splash'),
-            DashboardScreen(name='dashboard'),
-            SpeakersScreen(name='speakers'),
-            RecordingsScreen(name='recordings'),
-            QueueScreen(name='queue'),
-            FolderScreen(name='folder'),
-            SettingsScreen(name='settings'),
-            SpeakerDetailScreen(name='speaker_detail'),
-        ]
-        for screen in screens:
-            self.add_widget(screen)
-        Logger.info(f"Vocald: {len(screens)} screens registered")
+        screens_cls = _import_screens()
+        names = ('splash', 'dashboard', 'speakers', 'recordings',
+                 'queue', 'folder', 'settings', 'speaker_detail')
+        for cls, name in zip(screens_cls, names):
+            self.add_widget(cls(name=name))
+        Logger.info(f"Vocald: {len(names)} screens registered")
 
     def go_to(self, screen_name, direction='left'):
         if self.has_screen(screen_name):
@@ -97,7 +114,6 @@ class VocaldApp(App):
             Logger.error(f"Vocald: Build FAILED: {e}")
             import traceback
             Logger.error(traceback.format_exc())
-            # Return minimal fallback UI
             from kivy.uix.label import Label
             return Label(
                 text=f'Vocald startup error:\n{e}',
@@ -113,7 +129,6 @@ class VocaldApp(App):
                 Permission.FOREGROUND_SERVICE,
                 Permission.RECEIVE_BOOT_COMPLETED,
             ])
-            Logger.info("Vocald: Android permissions requested")
         except Exception as e:
             Logger.error(f"Vocald: Permission error: {e}")
 
